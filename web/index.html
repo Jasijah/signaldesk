@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f6f7fb">
+  <meta name="description" content="SignalDesk: a fictional partner support operations demo.">
+  <title>SignalDesk · Partner operations</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand"><span class="brand-mark">S<span></span></span><span>signal<span class="brand-light">desk</span><small>OPERATIONS STUDIO</small></span></div>
+      <div class="workspace-pill"><span class="workspace-avatar">JS</span><span><strong>Jasijah's workspace</strong><small>Portfolio demo</small></span><span class="chevron">⌄</span></div>
+      <nav class="side-nav">
+        <p class="nav-caption">WORKSPACE</p>
+        <button type="button" class="nav-item active" data-view="overview"><span data-icon="grid"></span> Overview</button>
+        <button type="button" class="nav-item" data-view="cases"><span data-icon="inbox"></span> Cases <span class="nav-count" id="navCount">3</span></button>
+        <button type="button" class="nav-item" data-view="analytics"><span data-icon="chart"></span> Insights</button>
+        <p class="nav-caption space-top">SCENARIOS</p>
+        <button type="button" class="nav-item" data-domain="Delivery"><span class="nav-dot blue"></span> Delivery operations</button>
+        <button type="button" class="nav-item" data-domain="Music"><span class="nav-dot purple"></span> Music distribution</button>
+        <button type="button" class="nav-item" data-domain="Service"><span class="nav-dot orange"></span> Solo service desk</button>
+      </nav>
+      <div class="sidebar-foot"><span class="online-dot"></span> Local demo <span class="version">v1.0</span></div>
+    </aside>
+
+    <main class="main" id="main">
+      <header class="topbar"><div class="breadcrumb"><span>Workspace</span><span class="slash">/</span><strong id="breadcrumb">Overview</strong></div><div class="top-actions"><span class="demo-label"><span class="online-dot"></span> Demo environment</span><button class="round-icon" type="button" id="resetButton" title="Reset demo" aria-label="Reset demo"><span data-icon="rotate"></span></button><span class="header-avatar" aria-label="Jasijah's workspace">JS</span></div></header>
+      <div class="content" id="content" aria-live="polite"></div>
+    </main>
+  </div>
+  <nav class="bottom-nav" aria-label="Mobile navigation">
+    <button type="button" data-view="overview" class="active"><span data-icon="grid"></span><small>Home</small></button>
+    <button type="button" data-view="cases"><span data-icon="inbox"></span><small>Cases</small></button>
+    <button type="button" data-view="analytics"><span data-icon="chart"></span><small>Insights</small></button>
+  </nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
