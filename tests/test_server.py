@@ -82,6 +82,14 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(case["events"][0]["source"], "Social DM")
         self.assertEqual(self.call("/api/metrics")["service"], 2)
 
+    def test_business_branding_and_reset(self):
+        b = self.call("/api/business", {"name":"Atlas Auto Care","tagline":"Care that comes to you.",
+                                        "accent":"#187e76","industry":"Auto"})
+        self.assertEqual(b["name"], "Atlas Auto Care")
+        self.assertEqual(self.call("/api/business")["accent"], "#187e76")
+        self.call("/api/reset", {})
+        self.assertEqual(self.call("/api/business")["name"], "Your business")
+
 
 if __name__ == "__main__":
     unittest.main()
