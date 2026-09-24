@@ -73,14 +73,17 @@ class ApiTest(unittest.TestCase):
             self.call("/server.py")
         self.assertEqual(failure.exception.code, 404)
 
-    def test_solo_service_channel_intake(self):
-        case = self.call("/api/cases", {"account":"Avery Brooks", "service":"Mobile repair",
-                                        "issue":"The device failed again", "channel":"Social DM",
+    def test_general_customer_channel_intake(self):
+        case = self.call("/api/cases", {"account":"Avery Brooks", "subject":"Damaged order",
+                                        "category":"Order issue", "issue":"The item arrived damaged", "channel":"Social DM",
                                         "payment":"Customer reports paid"})
+        self.assertEqual(case["domain"], "General")
+        self.assertEqual(case["title"], "Damaged order")
+        self.assertIn("order issue", case["tags"])
         self.assertEqual(case["channel"], "Social DM")
         self.assertIn("customer reports paid", case["tags"])
         self.assertEqual(case["events"][0]["source"], "Social DM")
-        self.assertEqual(self.call("/api/metrics")["service"], 2)
+        self.assertEqual(self.call("/api/metrics")["customer"], 3)
 
     def test_business_branding_and_reset(self):
         b = self.call("/api/business", {"name":"Atlas Auto Care","tagline":"Care that comes to you.",
