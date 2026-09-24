@@ -13,12 +13,13 @@
   <div class="app-shell">
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="brand"><span class="brand-mark">S<span></span></span><span>signal<span class="brand-light">desk</span><small>OPERATIONS STUDIO</small></span></div>
-      <div class="workspace-pill"><span class="workspace-avatar">JS</span><span><strong>Jasijah's workspace</strong><small>Portfolio demo</small></span><span class="chevron">⌄</span></div>
+      <div class="workspace-pill"><span class="workspace-avatar" id="workspaceInitials">YB</span><span><strong id="workspaceName">Your business</strong><small>Portfolio demo</small></span><span class="chevron">⌄</span></div>
       <nav class="side-nav">
         <p class="nav-caption">WORKSPACE</p>
         <button type="button" class="nav-item active" data-view="overview"><span data-icon="grid"></span> Overview</button>
         <button type="button" class="nav-item" data-view="cases"><span data-icon="inbox"></span> Cases <span class="nav-count" id="navCount">3</span></button>
         <button type="button" class="nav-item" data-view="analytics"><span data-icon="chart"></span> Insights</button>
+        <button type="button" class="nav-item" data-view="brand"><span data-icon="sparkle"></span> Your brand</button>
         <p class="nav-caption space-top">SCENARIOS</p>
         <button type="button" class="nav-item" data-domain="Delivery"><span class="nav-dot blue"></span> Delivery operations</button>
         <button type="button" class="nav-item" data-domain="Music"><span class="nav-dot purple"></span> Music distribution</button>
@@ -36,6 +37,7 @@
     <button type="button" data-view="overview" class="active"><span data-icon="grid"></span><small>Home</small></button>
     <button type="button" data-view="cases"><span data-icon="inbox"></span><small>Cases</small></button>
     <button type="button" data-view="analytics"><span data-icon="chart"></span><small>Insights</small></button>
+    <button type="button" data-view="brand"><span data-icon="sparkle"></span><small>Brand</small></button>
   </nav>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
