@@ -21,6 +21,7 @@ Open `http://127.0.0.1:8765`. For a clean demo, stop the server and delete `.sig
 3. Select **Northstar release**. Its partner rejected a metadata payload while a release was marked delivered internally. Run diagnostics to identify the rejected field. Switch between customer and engineering updates.
 4. Select **Avery Brooks** to inspect a mobile mechanic complaint received by business SMS. The Cash App payment is explicitly unverified. Open **New case** to simulate email, SMS, chat, or social DM intake. Preview the fictional customer request form at `/intake.html` to show how a social comment could move into a private case. Add an internal note and mark it resolved.
 5. Use **Reset demo** to restore the sample data.
+6. Open **Your brand** to set a business name, welcome line, and signature color. Preview the same branding on the customer request page.
 
 ## What this demonstrates
 
@@ -38,6 +39,8 @@ The diagnostic rules are deterministic and transparent. They do not represent a 
 | --- | --- |
 | `GET /api/health` | Health check |
 | `GET /api/metrics` | Live demo counts and summaries |
+| `GET /api/business` | Current demo business identity |
+| `POST /api/business` | Update name, tagline, accent, and business type |
 | `GET /api/cases` | Case list; optional `?q=` and `?domain=` |
 | `POST /api/cases` | Simulated email/SMS/chat/social/private-form intake |
 | `GET /api/cases/{id}` | Case, trace, notes, and diagnosis |
