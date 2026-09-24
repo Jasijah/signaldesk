@@ -75,6 +75,14 @@ SEED = [
             ["Today", "Complaint received", "business SMS", "Open", "Customer reports the car will not start and asks for help", "error"],
         ],
     },
+    {
+        "id": "SD-1047", "domain": "Commerce", "account": "Jordan Lee", "title": "Damaged order needs a replacement",
+        "subtitle": "Retail · customer care", "priority": "Medium", "status": "open", "owner": "Customer Care", "channel": "Web chat",
+        "created": "Today", "updated": "16 min ago", "sla": "Follow up today", "impact": "1 order awaiting a response",
+        "customer": "My order arrived damaged. Can you help me arrange a replacement?",
+        "kind": "order_followup", "request_id": "manual_1047", "tags": ["order issue", "replacement", "web chat"],
+        "events": [["Today", "Order concern received", "web chat", "Open", "Customer reports damaged goods; order details have not been verified", "warning"]],
+    },
 ]
 
 DIAGNOSES = {
@@ -83,7 +91,8 @@ DIAGNOSES = {
     "duplicate_request": {"label": "Retry created a second job", "confidence": "High confidence · duplicate external reference", "cause": "The partner retried a slow create request without an idempotency key. Both requests created a job and each received a courier assignment.", "action": "Pause further retries, reconcile the two jobs, then add a stable idempotency key to future create requests.", "evidence": ["Two 201 responses for external_ref CS-203", "Second request had no idempotency key", "Two courier assignments recorded"]},
     "delayed_ack": {"label": "Partner acknowledged update", "confidence": "High confidence · partner response", "cause": "The partner accepted the update after a short processing delay. No active incident remains.", "action": "Share the acknowledgement timestamp with the customer.", "evidence": ["Partner returned 200 at 14:13:48"]},
     "service_followup": {"label": "Customer follow-up needed", "confidence": "Intake summary · verify details with customer", "cause": "A customer reported a service issue after a completed visit. The payment is customer-reported and has not been verified against a payment account.", "action": "Reply through the business channel, confirm symptoms and service history, check the payment directly, then agree on a revisit or next step.", "evidence": ["Business SMS complaint logged today", "Prior service noted in owner record", "Payment status is unverified manual entry"]},
-    "manual_intake": {"label": "Owner review needed", "confidence": "Demo intake · unverified", "cause": "This case was captured from a customer channel in the demo. No outside inbox or payment system has been checked automatically.", "action": "Review the request, verify any payment in the payment provider, and reply through the business channel with a clear follow-up commitment.", "evidence": ["Customer report captured in inbox", "Service and payment context are demo entries"]},
+    "order_followup": {"label": "Order follow-up needed", "confidence": "Customer report · verify order details", "cause": "A customer reported receiving a damaged order. The order and damage have not been independently checked.", "action": "Confirm the order and replacement policy, then send the customer a clear next step through the business channel.", "evidence": ["Customer report captured from web chat", "Order details not yet verified"]},
+    "manual_intake": {"label": "Team review needed", "confidence": "Demo intake · unverified", "cause": "This case was captured from a customer channel in the demo. No outside inbox, order, booking, or payment system has been checked automatically.", "action": "Review the request, verify relevant details in your own systems, and reply through the business channel with a clear next step.", "evidence": ["Customer report captured in inbox", "Context is a demo entry and needs verification"]},
 }
 
 
@@ -112,7 +121,7 @@ def initialize(reset=False):
         """)
         if "channel" not in [r[1] for r in con.execute("PRAGMA table_info(cases)")]:
             con.execute("ALTER TABLE cases ADD COLUMN channel TEXT DEFAULT 'Partner API'")
-        con.execute("INSERT OR IGNORE INTO business(id,name,tagline,accent,industry) VALUES (1,'Your business','Thoughtful service, every time.','#3567e9','Services')")
+        con.execute("INSERT OR IGNORE INTO business(id,name,tagline,accent,industry) VALUES (1,'Your business','Thoughtful service, every time.','#3567e9','Any business')")
         if con.execute("SELECT count(*) FROM cases").fetchone()[0]:
             return
         for case in SEED:
@@ -151,7 +160,8 @@ def metrics():
             "resolved": sum(c["status"] == "resolved" for c in cases),
             "delivery": sum(c["domain"] == "Delivery" and c["status"] != "resolved" for c in cases),
             "music": sum(c["domain"] == "Music" and c["status"] != "resolved" for c in cases),
-            "service": sum(c["domain"] == "Service" and c["status"] != "resolved" for c in cases)}
+            "service": sum(c["domain"] == "Service" and c["status"] != "resolved" for c in cases),
+            "customer": sum(c["domain"] not in {"Delivery", "Music"} and c["status"] != "resolved" for c in cases)}
 
 
 def business():
@@ -168,7 +178,7 @@ def save_business(data):
         raise ValueError("Tagline must be 100 characters or fewer")
     if accent not in {"#3567e9", "#885ec7", "#187e76", "#b9744e"}:
         raise ValueError("Choose a supported accent color")
-    if industry not in {"Services", "Beauty", "Auto", "Device repair", "Other"}:
+    if industry not in {"Any business", "Retail", "Services", "Beauty", "Auto", "Device repair", "Studio", "Agency", "Professional services", "Creator", "Other"}:
         raise ValueError("Choose a supported business type")
     with connection() as con:
         con.execute("UPDATE business SET name=?,tagline=?,accent=?,industry=? WHERE id=1",
@@ -178,27 +188,30 @@ def save_business(data):
 
 def create_intake(data):
     account = data.get("account", "")
-    service = data.get("service", "")
+    subject = data.get("subject", data.get("service", ""))
+    category = data.get("category", "Request")
     issue = data.get("issue", "")
     payment = data.get("payment", "Not discussed")
     channel = data.get("channel", "Email")
-    if not all(isinstance(v, str) and 2 <= len(v.strip()) <= 200 for v in (account, service, issue)):
-        raise ValueError("Customer, service, and request must each be 2–200 characters")
+    if not all(isinstance(v, str) and 2 <= len(v.strip()) <= 200 for v in (account, subject, issue)):
+        raise ValueError("Customer, subject, and request must each be 2–200 characters")
+    if category not in {"Request", "Complaint", "Order issue", "Appointment", "Billing", "Other"}:
+        raise ValueError("Invalid request category")
     if payment not in {"Not discussed", "Unpaid", "Customer reports paid", "Owner verified paid"}:
         raise ValueError("Invalid payment status")
     if channel not in {"Email", "SMS", "Web chat", "Social DM", "Private form", "Phone note"}:
         raise ValueError("Invalid channel")
     with connection() as con:
-        seq = con.execute("SELECT COALESCE(MAX(CAST(substr(id,4) AS INTEGER)), 1045)+1 FROM cases").fetchone()[0]
+        seq = con.execute("SELECT COALESCE(MAX(CAST(substr(id,4) AS INTEGER)), 1047)+1 FROM cases").fetchone()[0]
         case_id = f"SD-{seq}"
-        values = (case_id, "Service", account.strip(), f"{service.strip()} · customer follow-up", "Solo service · unified inbox",
-                  "Medium", "open", "Owner", "Today", "Just now", "Follow up today", "1 customer awaiting a response",
-                  issue.strip(), "manual_intake", f"manual_{seq}", json.dumps([channel.lower(), payment.lower()]), channel)
+        values = (case_id, "General", account.strip(), subject.strip(), f"{category} · {channel}",
+                  "Medium", "open", "Team", "Today", "Just now", "Follow up today", "1 customer awaiting a response",
+                  issue.strip(), "manual_intake", f"manual_{seq}", json.dumps([category.lower(), channel.lower(), payment.lower()]), channel)
         con.execute("INSERT INTO cases (id,domain,account,title,subtitle,priority,status,owner,created,updated,sla,impact,customer,kind,request_id,tags,channel) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values)
         con.execute("INSERT INTO events(case_id,time,title,source,code,detail,tone) VALUES (?,?,?,?,?,?,?)",
                     (case_id, "Now", "Customer request recorded", channel, "Open", issue.strip(), "warning"))
         con.execute("INSERT INTO events(case_id,time,title,source,code,detail,tone) VALUES (?,?,?,?,?,?,?)",
-                    (case_id, "Now", "Payment context recorded", "owner entry", "Unverified" if payment == "Customer reports paid" else "Logged", payment, "warning"))
+                    (case_id, "Now", "Payment context recorded", "team entry", "Unverified" if payment == "Customer reports paid" else "Logged", payment, "warning"))
         return one_case(con, case_id)
 
 
