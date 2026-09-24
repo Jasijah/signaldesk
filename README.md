@@ -1,6 +1,6 @@
 # SignalDesk
 
-An interactive portfolio demo for customer support engineering and operations. Investigate fictional partner integration incidents: a last-mile enterprise delivery that stopped sending status updates, and a music release stuck at a distribution partner. A third scenario shows a solo service owner organizing an SMS complaint and a customer-reported payment in a shared business inbox. The product combines intake, event traces, diagnostics, customer communication, and support metrics in a mobile-friendly interface.
+A mobile-friendly customer inbox and support operations portfolio demo for businesses of different sizes and types: shops, studios, agencies, creators, service providers, and partner operations teams. Organize requests, complaints, order issues, appointments, and billing follow-ups from email, text, chat, and private forms. Fictional scenarios include delivery and music partner incidents, a mobile mechanic complaint, and a retail replacement request. The same case workflow brings together intake, timelines, customer communication, and simple metrics.
 
 **All companies, customers, cases, logs, and metrics in this demo are fictional.** This is a local demo, not a production support platform. It intentionally uses no customer data, AI API, credentials, or external services.
 
@@ -19,7 +19,7 @@ Open `http://127.0.0.1:8765`. For a clean demo, stop the server and delete `.sig
 1. Select **MetroMart delivery** and inspect the status timeline and trace. The customer sees a stale “picked up” state despite a successful dropoff.
 2. Select **Run diagnostics**. The rule engine correlates a completed proof-of-delivery event with a failed partner callback and explains the root cause. Select **Simulate replay** to recover the integration, then copy the customer update.
 3. Select **Northstar release**. Its partner rejected a metadata payload while a release was marked delivered internally. Run diagnostics to identify the rejected field. Switch between customer and engineering updates.
-4. Select **Avery Brooks** to inspect a mobile mechanic complaint received by business SMS. The Cash App payment is explicitly unverified. Open **New case** to simulate email, SMS, chat, or social DM intake. Preview the fictional customer request form at `/intake.html` to show how a social comment could move into a private case. Add an internal note and mark it resolved.
+4. Select **Avery Brooks** for a mobile mechanic SMS complaint, or **Jordan Lee** for a retail web chat replacement request. The Cash App payment is explicitly unverified. Open **New case** to simulate email, SMS, chat, or social DM intake. Preview the fictional customer request form at `/intake.html` to show how a social comment could move into a private case. Add an internal note and mark it resolved.
 5. Use **Reset demo** to restore the sample data.
 6. Open **Your brand** to set a business name, welcome line, and signature color. Preview the same branding on the customer request page.
 
@@ -28,7 +28,7 @@ Open `http://127.0.0.1:8765`. For a clean demo, stop the server and delete `.sig
 - API and webhook troubleshooting with event order, status codes, request IDs, and safe replay semantics.
 - Support operations: triage, severity, case ownership, notes, evidence, escalation, and customer updates.
 - Product thinking: a short investigation path, readable mobile layout, and clear separation between confirmed evidence and suggested action.
-- Small business adoption: one shared queue for email, text, chat, and social-origin complaints, with manual payment context and no need for the owner to use a personal number. The local demo simulates these channels; it does not connect to providers.
+- Everyday business adoption: a shared queue for email, text, chat, and social-origin complaints across retail, creative work, professional services, and solo businesses, with optional manual payment context and a private customer request page. The local demo simulates these channels; it does not connect to providers.
 - Python standard-library API, SQLite persistence, server-side input validation, and basic HTTP integration tests.
 
 The diagnostic rules are deterministic and transparent. They do not represent a trained AI model. The product can later accept a classifier, but a high quality investigation workflow stands on its own.
