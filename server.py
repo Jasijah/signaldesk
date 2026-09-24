@@ -98,7 +98,7 @@ def connection():
 def initialize(reset=False):
     with connection() as con:
         if reset:
-            con.executescript("DROP TABLE IF EXISTS notes; DROP TABLE IF EXISTS events; DROP TABLE IF EXISTS cases;")
+            con.executescript("DROP TABLE IF EXISTS notes; DROP TABLE IF EXISTS events; DROP TABLE IF EXISTS cases; DROP TABLE IF EXISTS business;")
         con.executescript("""
             CREATE TABLE IF NOT EXISTS cases (id TEXT PRIMARY KEY, domain TEXT, account TEXT, title TEXT, subtitle TEXT,
               priority TEXT, status TEXT, owner TEXT, created TEXT, updated TEXT, sla TEXT, impact TEXT,
@@ -107,9 +107,12 @@ def initialize(reset=False):
               time TEXT, title TEXT, source TEXT, code TEXT, detail TEXT, tone TEXT);
             CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, case_id TEXT REFERENCES cases(id),
               body TEXT NOT NULL, created TEXT DEFAULT (datetime('now')));
+            CREATE TABLE IF NOT EXISTS business (id INTEGER PRIMARY KEY CHECK(id=1), name TEXT NOT NULL,
+              tagline TEXT NOT NULL, accent TEXT NOT NULL, industry TEXT NOT NULL);
         """)
         if "channel" not in [r[1] for r in con.execute("PRAGMA table_info(cases)")]:
             con.execute("ALTER TABLE cases ADD COLUMN channel TEXT DEFAULT 'Partner API'")
+        con.execute("INSERT OR IGNORE INTO business(id,name,tagline,accent,industry) VALUES (1,'Your business','Thoughtful service, every time.','#3567e9','Services')")
         if con.execute("SELECT count(*) FROM cases").fetchone()[0]:
             return
         for case in SEED:
@@ -149,6 +152,28 @@ def metrics():
             "delivery": sum(c["domain"] == "Delivery" and c["status"] != "resolved" for c in cases),
             "music": sum(c["domain"] == "Music" and c["status"] != "resolved" for c in cases),
             "service": sum(c["domain"] == "Service" and c["status"] != "resolved" for c in cases)}
+
+
+def business():
+    with connection() as con:
+        return dict(con.execute("SELECT name,tagline,accent,industry FROM business WHERE id=1").fetchone())
+
+
+def save_business(data):
+    name, tagline = data.get("name"), data.get("tagline")
+    accent, industry = data.get("accent"), data.get("industry")
+    if not isinstance(name, str) or not 2 <= len(name.strip()) <= 50:
+        raise ValueError("Business name must be 2–50 characters")
+    if not isinstance(tagline, str) or len(tagline) > 100:
+        raise ValueError("Tagline must be 100 characters or fewer")
+    if accent not in {"#3567e9", "#885ec7", "#187e76", "#b9744e"}:
+        raise ValueError("Choose a supported accent color")
+    if industry not in {"Services", "Beauty", "Auto", "Device repair", "Other"}:
+        raise ValueError("Choose a supported business type")
+    with connection() as con:
+        con.execute("UPDATE business SET name=?,tagline=?,accent=?,industry=? WHERE id=1",
+                    (name.strip(), tagline.strip(), accent, industry))
+    return business()
 
 
 def create_intake(data):
@@ -197,6 +222,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": True})
         if path == "/api/metrics":
             return self.send_json(metrics())
+        if path == "/api/business":
+            return self.send_json(business())
         if path == "/api/cases":
             query = parse_qs(route.query)
             return self.send_json(case_list(query.get("q", [""])[0], query.get("domain", [""])[0]))
@@ -231,6 +258,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/reset":
             initialize(reset=True)
             return self.send_json({"ok": True})
+        if path == "/api/business":
+            try:
+                return self.send_json(save_business(data))
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
         if path == "/api/cases":
             try:
                 return self.send_json(create_intake(data), 201)
