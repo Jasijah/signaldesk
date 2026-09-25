@@ -48,7 +48,9 @@ The diagnostic rules are deterministic and transparent. They do not represent a 
 | `POST /api/cases/{id}/replay` | Simulate an idempotent partner replay |
 | `POST /api/cases/{id}/status` | Set `open`, `investigating`, or `resolved` |
 | `POST /api/cases/{id}/notes` | Add a short internal note |
-| `POST /api/reset` | Recreate the fictional sample dataset |
+| `POST /api/reset` | Recreate the fictional sample dataset when `SIGNALDESK_ALLOW_RESET=1` |
+
+All POST endpoints require `X-SignalDesk-Token`. The server prints a fresh write token on startup; the browser asks for it on the first edit and keeps it for that tab. Set `SIGNALDESK_WRITE_TOKEN` to supply your own. Reset is disabled by default and must be explicitly enabled with `SIGNALDESK_ALLOW_RESET=1`. Keep the server bound to localhost.
 
 Replay is a simulation for a portfolio demo; it does not send a real webhook. The demo server has no authentication, so bind it to localhost and do not expose it publicly as-is.
 The channel selector also simulates intake. A production service would need dedicated business email/SMS/chat connectors, consent and opt-out handling, identity matching, secure authentication, and a public private-intake form. It should never scrape private social messages or claim a Cash App payment is verified from a customer's report.
