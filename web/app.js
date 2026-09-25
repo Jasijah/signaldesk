@@ -26,8 +26,15 @@ const content = document.getElementById('content');
 let toastTimer;
 
 async function api(path, options={}) {
-  const response = await fetch(path, { ...options, headers:{'Content-Type':'application/json',...(options.headers||{})} });
+  const headers={'Content-Type':'application/json',...(options.headers||{})};
+  if(options.method==='POST'){
+    let token=sessionStorage.getItem('signaldesk-write-token');
+    if(!token){token=window.prompt('Enter the SignalDesk write token shown in the server terminal:');if(!token)throw new Error('Write token required');sessionStorage.setItem('signaldesk-write-token',token);}
+    headers['X-SignalDesk-Token']=token;
+  }
+  const response = await fetch(path, { ...options, headers });
   const body = await response.json();
+  if(response.status===401)sessionStorage.removeItem('signaldesk-write-token');
   if (!response.ok) throw new Error(body.error || 'Something went wrong');
   return body;
 }
