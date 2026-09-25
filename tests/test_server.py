@@ -1,6 +1,7 @@
 """Exercise actual HTTP routes and persistent state changes."""
 import json
 import os
+from unittest.mock import patch
 from pathlib import Path
 import tempfile
 import threading
@@ -31,11 +32,12 @@ class ApiTest(unittest.TestCase):
         cls.temp.cleanup()
 
     def setUp(self):
-        self.call("/api/reset", {})
+        with patch.dict(os.environ, {"SIGNALDESK_ALLOW_RESET": "1"}):
+            self.call("/api/reset", {})
 
     def call(self, route, data=None):
         payload = None if data is None else json.dumps(data).encode()
-        request = Request(self.base + route, data=payload, headers={"Content-Type":"application/json"})
+        request = Request(self.base + route, data=payload, headers={"Content-Type":"application/json", "X-SignalDesk-Token": app.WRITE_TOKEN})
         with urlopen(request, timeout=3) as response:
             return json.load(response)
 
@@ -90,8 +92,17 @@ class ApiTest(unittest.TestCase):
                                         "accent":"#187e76","industry":"Auto"})
         self.assertEqual(b["name"], "Atlas Auto Care")
         self.assertEqual(self.call("/api/business")["accent"], "#187e76")
-        self.call("/api/reset", {})
+        with patch.dict(os.environ, {"SIGNALDESK_ALLOW_RESET": "1"}):
+            self.call("/api/reset", {})
         self.assertEqual(self.call("/api/business")["name"], "Your business")
+
+    def test_writes_require_token_and_reset_opt_in(self):
+        with self.assertRaises(HTTPError) as denied:
+            urlopen(Request(self.base + "/api/cases", data=b"{}", headers={"Content-Type":"application/json"}))
+        self.assertEqual(denied.exception.code, 401)
+        with self.assertRaises(HTTPError) as denied:
+            self.call("/api/reset", {})
+        self.assertEqual(denied.exception.code, 403)
 
 
 if __name__ == "__main__":
