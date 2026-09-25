@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import os
 from pathlib import Path
 import sqlite3
@@ -11,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parent
 DB = Path(os.environ.get("SIGNALDESK_DB", ROOT / ".signaldesk.sqlite3"))
 WEB = ROOT / "web"
+WRITE_TOKEN = os.environ.get("SIGNALDESK_WRITE_TOKEN") or secrets.token_urlsafe(24)
 
 SEED = [
     {
@@ -259,6 +261,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if not secrets.compare_digest(self.headers.get("X-SignalDesk-Token", ""), WRITE_TOKEN):
+            return self.send_json({"error": "Write token required"}, 401)
+        origin = self.headers.get("Origin")
+        if origin and origin != f"http://{self.headers.get('Host')}":
+            return self.send_json({"error": "Cross-origin write denied"}, 403)
+        if path == "/api/reset" and os.environ.get("SIGNALDESK_ALLOW_RESET") != "1":
+            return self.send_json({"error": "Reset is disabled; set SIGNALDESK_ALLOW_RESET=1 to enable it"}, 403)
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if length < 0 or length > 8192:
@@ -319,6 +328,7 @@ if __name__ == "__main__":
     initialize()
     server = ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("PORT", "8765"))), Handler)
     print(f"SignalDesk running at http://127.0.0.1:{server.server_port}")
+    print(f"SignalDesk write token (enter in browser on first edit): {WRITE_TOKEN}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
