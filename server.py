@@ -4,15 +4,21 @@ from __future__ import annotations
 import json
 import secrets
 import os
+import re
+import time
+from threading import Lock
 from pathlib import Path
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
-DB = Path(os.environ.get("SIGNALDESK_DB", ROOT / ".signaldesk.sqlite3"))
+DB = Path(os.environ.get("SIGNALDESK_DB", ROOT / (".signaldesk-pilot.sqlite3" if os.environ.get("SIGNALDESK_MODE") == "pilot" else ".signaldesk.sqlite3")))
 WEB = ROOT / "web"
 WRITE_TOKEN = os.environ.get("SIGNALDESK_WRITE_TOKEN") or secrets.token_urlsafe(24)
+PILOT = os.environ.get("SIGNALDESK_MODE") == "pilot"
+INTAKE_LIMIT = {}
+INTAKE_LOCK = Lock()
 
 SEED = [
     {
@@ -107,6 +113,8 @@ def connection():
 
 
 def initialize(reset=False):
+    if PILOT and reset:
+        raise ValueError("Pilot data cannot be reset")
     with connection() as con:
         if reset:
             con.executescript("DROP TABLE IF EXISTS notes; DROP TABLE IF EXISTS events; DROP TABLE IF EXISTS cases; DROP TABLE IF EXISTS business;")
@@ -124,7 +132,7 @@ def initialize(reset=False):
         if "channel" not in [r[1] for r in con.execute("PRAGMA table_info(cases)")]:
             con.execute("ALTER TABLE cases ADD COLUMN channel TEXT DEFAULT 'Partner API'")
         con.execute("INSERT OR IGNORE INTO business(id,name,tagline,accent,industry) VALUES (1,'Your business','Thoughtful service, every time.','#3567e9','Any business')")
-        if con.execute("SELECT count(*) FROM cases").fetchone()[0]:
+        if PILOT or con.execute("SELECT count(*) FROM cases").fetchone()[0]:
             return
         for case in SEED:
             con.execute("INSERT INTO cases (id,domain,account,title,subtitle,priority,status,owner,created,updated,sla,impact,customer,kind,request_id,tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -144,6 +152,11 @@ def one_case(con, case_id):
     case["events"] = [dict(e) for e in con.execute("SELECT time,title,source,code,detail,tone FROM events WHERE case_id=? ORDER BY id", (case_id,))]
     case["notes"] = [dict(n) for n in con.execute("SELECT body,created FROM notes WHERE case_id=? ORDER BY id DESC", (case_id,))]
     case["diagnosis"] = DIAGNOSES[case["kind"]] if case["diagnosed"] else None
+    if PILOT and case["kind"] == "manual_intake" and case["diagnosis"]:
+        case["diagnosis"] = {"label": "Team review needed", "confidence": "Customer report · unverified",
+            "cause": "The details came from a customer request and have not been independently verified.",
+            "action": "Check the relevant records, then follow up with the customer using the email in internal notes.",
+            "evidence": ["Customer request recorded in the case history"]}
     return case
 
 
@@ -188,13 +201,19 @@ def save_business(data):
     return business()
 
 
-def create_intake(data):
+def create_intake(data, public=False):
     account = data.get("account", "")
     subject = data.get("subject", data.get("service", ""))
     category = data.get("category", "Request")
     issue = data.get("issue", "")
     payment = data.get("payment", "Not discussed")
     channel = data.get("channel", "Email")
+    email = data.get("email", "")
+    if public:
+        channel, payment = "Private form", "Not discussed"
+    if public or email:
+        if not isinstance(email, str) or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or len(email) > 254:
+            raise ValueError("Enter a valid email address so the business can follow up")
     if not all(isinstance(v, str) and 2 <= len(v.strip()) <= 200 for v in (account, subject, issue)):
         raise ValueError("Customer, subject, and request must each be 2–200 characters")
     if category not in {"Request", "Complaint", "Order issue", "Appointment", "Billing", "Other"}:
@@ -204,6 +223,7 @@ def create_intake(data):
     if channel not in {"Email", "SMS", "Web chat", "Social DM", "Private form", "Phone note"}:
         raise ValueError("Invalid channel")
     with connection() as con:
+        con.execute("BEGIN IMMEDIATE")
         seq = con.execute("SELECT COALESCE(MAX(CAST(substr(id,4) AS INTEGER)), 1047)+1 FROM cases").fetchone()[0]
         case_id = f"SD-{seq}"
         values = (case_id, "General", account.strip(), subject.strip(), f"{category} · {channel}",
@@ -214,7 +234,22 @@ def create_intake(data):
                     (case_id, "Now", "Customer request recorded", channel, "Open", issue.strip(), "warning"))
         con.execute("INSERT INTO events(case_id,time,title,source,code,detail,tone) VALUES (?,?,?,?,?,?,?)",
                     (case_id, "Now", "Payment context recorded", "team entry", "Unverified" if payment == "Customer reports paid" else "Logged", payment, "warning"))
+        if email:
+            con.execute("INSERT INTO notes(case_id,body) VALUES (?,?)", (case_id, "Customer reply email: " + email.strip().lower()))
         return one_case(con, case_id)
+
+
+def intake_allowed(address):
+    """Small in-process throttle; production hosting also needs an edge rate limit."""
+    now = time.monotonic()
+    with INTAKE_LOCK:
+        recent = [t for t in INTAKE_LIMIT.get(address, []) if now - t < 3600]
+        if len(recent) >= 10:
+            INTAKE_LIMIT[address] = recent
+            return False
+        recent.append(now)
+        INTAKE_LIMIT[address] = recent
+        return True
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -227,6 +262,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         self.wfile.write(body)
 
@@ -235,6 +273,11 @@ class Handler(BaseHTTPRequestHandler):
         path = route.path
         if path == "/api/health":
             return self.send_json({"ok": True})
+        if path == "/api/config":
+            return self.send_json({"pilot": PILOT})
+        if path in {"/api/metrics", "/api/cases"} or path.startswith("/api/cases/"):
+            if PILOT and not secrets.compare_digest(self.headers.get("X-SignalDesk-Token", ""), WRITE_TOKEN):
+                return self.send_json({"error": "Workspace access required"}, 401)
         if path == "/api/metrics":
             return self.send_json(metrics())
         if path == "/api/business":
@@ -256,16 +299,22 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", mime + "; charset=utf-8")
         self.send_header("Content-Length", str(len(content)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         self.wfile.write(content)
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if not secrets.compare_digest(self.headers.get("X-SignalDesk-Token", ""), WRITE_TOKEN):
+        public = path == "/api/public/intake" and PILOT
+        if not public and not secrets.compare_digest(self.headers.get("X-SignalDesk-Token", ""), WRITE_TOKEN):
             return self.send_json({"error": "Write token required"}, 401)
         origin = self.headers.get("Origin")
-        if origin and origin != f"http://{self.headers.get('Host')}":
+        if origin and origin not in {f"http://{self.headers.get('Host')}", f"https://{self.headers.get('Host')}"}:
             return self.send_json({"error": "Cross-origin write denied"}, 403)
+        if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+            return self.send_json({"error": "JSON content type required"}, 415)
         if path == "/api/reset" and os.environ.get("SIGNALDESK_ALLOW_RESET") != "1":
             return self.send_json({"error": "Reset is disabled; set SIGNALDESK_ALLOW_RESET=1 to enable it"}, 403)
         try:
@@ -278,8 +327,20 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             return self.send_json({"error": "Invalid JSON"}, 400)
         if path == "/api/reset":
+            if PILOT:
+                return self.send_json({"error": "Pilot data cannot be reset"}, 403)
             initialize(reset=True)
             return self.send_json({"ok": True})
+        if public:
+            if data.get("website"):
+                return self.send_json({"ok": True}, 202)
+            if not intake_allowed(self.client_address[0]):
+                return self.send_json({"error": "Too many requests; please try later"}, 429)
+            try:
+                case = create_intake(data, public=True)
+                return self.send_json({"id": case["id"]}, 201)
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
         if path == "/api/business":
             try:
                 return self.send_json(save_business(data))
@@ -325,10 +386,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if PILOT and (not os.environ.get("SIGNALDESK_WRITE_TOKEN") or len(WRITE_TOKEN) < 32):
+        raise SystemExit("Pilot mode requires SIGNALDESK_WRITE_TOKEN of at least 32 characters")
+    if PILOT:
+        os.umask(0o077)
     initialize()
-    server = ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("PORT", "8765"))), Handler)
-    print(f"SignalDesk running at http://127.0.0.1:{server.server_port}")
-    print(f"SignalDesk write token (enter in browser on first edit): {WRITE_TOKEN}", flush=True)
+    host = os.environ.get("SIGNALDESK_HOST", "127.0.0.1")
+    server = ThreadingHTTPServer((host, int(os.environ.get("PORT", "8765"))), Handler)
+    print(f"SignalDesk running on {host}:{server.server_port}")
+    if not PILOT:
+        print(f"SignalDesk demo write token (enter in browser on first edit): {WRITE_TOKEN}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
