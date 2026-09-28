@@ -105,5 +105,67 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(denied.exception.code, 403)
 
 
+class PilotApiTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db, self.old_pilot = app.DB, app.PILOT
+        app.DB = Path(self.temp.name) / "pilot.sqlite3"
+        app.PILOT = True
+        app.INTAKE_LIMIT.clear()
+        app.initialize()
+        self.server = app.ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        app.DB, app.PILOT = self.old_db, self.old_pilot
+        self.temp.cleanup()
+
+    def request(self, route, data=None, token=None):
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["X-SignalDesk-Token"] = token
+        request = Request(self.base + route, data=None if data is None else json.dumps(data).encode(), headers=headers)
+        with urlopen(request, timeout=3) as response:
+            return json.load(response)
+
+    def test_private_cases_and_public_customer_submission(self):
+        with self.assertRaises(HTTPError) as denied:
+            self.request("/api/cases")
+        self.assertEqual(denied.exception.code, 401)
+        self.assertEqual(self.request("/api/cases", token=app.WRITE_TOKEN), [])
+        payload = {"account": "Test Customer", "email": "test@example.com", "subject": "Appointment question",
+                   "issue": "Please confirm my appointment", "category": "Appointment", "channel": "SMS",
+                   "payment": "Owner verified paid"}
+        created = self.request("/api/public/intake", payload)
+        self.assertEqual(set(created), {"id"})
+        case = self.request("/api/cases/" + created["id"], token=app.WRITE_TOKEN)
+        self.assertEqual(case["channel"], "Private form")
+        self.assertNotIn("owner verified paid", case["tags"])
+        self.assertIn("test@example.com", case["notes"][0]["body"])
+        with self.assertRaises(HTTPError) as denied:
+            self.request("/api/cases/" + created["id"])
+        self.assertEqual(denied.exception.code, 401)
+        with self.assertRaises(HTTPError) as denied:
+            self.request("/api/reset", {}, token=app.WRITE_TOKEN)
+        self.assertEqual(denied.exception.code, 403)
+
+    def test_bad_email_rejected_and_public_rate_limited(self):
+        payload = {"account": "Test Customer", "email": "invalid", "subject": "Appointment question",
+                   "issue": "Please confirm my appointment", "category": "Appointment"}
+        with self.assertRaises(HTTPError) as denied:
+            self.request("/api/public/intake", payload)
+        self.assertEqual(denied.exception.code, 400)
+        payload["email"] = "test@example.com"
+        for _ in range(9):
+            self.request("/api/public/intake", payload)
+        with self.assertRaises(HTTPError) as denied:
+            self.request("/api/public/intake", payload)
+        self.assertEqual(denied.exception.code, 429)
+
+
 if __name__ == "__main__":
     unittest.main()
